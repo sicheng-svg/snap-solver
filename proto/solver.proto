@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package solver;
+
+// Go 代码生成时的包路径(指向你 server/gen 下生成代码的导入路径)
+// 格式:option go_package = "<module路径>/gen;<包名>";
+option go_package = "github.com/sicheng-svg/snap-solver/server/gen;solverpb";
+
+// ============================================================
+// 服务定义:Python agent 暴露的 gRPC 接口
+// ============================================================
+service SolverAgent {
+  // 解题:一个请求,流式返回多段(思考过程 + 最终回答 token)
+    rpc Solve(SolveRequest) returns (stream SolveChunk);
+
+  // 健康检查:微服务标配,判断服务是否存活
+    rpc HealthCheck(HealthRequest) returns (HealthReply);
+}
+
+// ============================================================
+// 请求 / 响应消息
+// ============================================================
+
+// 解题请求
+message SolveRequest {
+    bytes  image      = 1;  // 图片字节(拍照),无图时为空
+    string user_text  = 2;  // 文本输入(打字),无文本时为空
+    string session_id = 3;  // 会话标识(多轮对话靠它,对应 checkpointer thread_id)
+    string user_id    = 4;  // 用户标识(预留给长期记忆)
+}
+
+// 流式返回的一段
+message SolveChunk {
+    string type    = 1;  // "thinking" | "token" | "done" | "error"
+    string stage   = 2;  // 思考阶段名(type=thinking 时):recognize/solver/verify/reviewer...
+    string content = 3;  // 思考文字 / token 内容 / 错误信息
+}
+
+// 健康检查
+message HealthRequest {}
+
+message HealthReply {
+    string status = 1;  // "ok"
+}

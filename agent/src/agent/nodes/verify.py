@@ -18,6 +18,8 @@ nodes/verify.py —— 工具验证节点(SymPy,注册表模式)。
 
 import sympy
 
+from langgraph.config import get_stream_writer
+
 from ..state import SolveState
 
 
@@ -136,4 +138,15 @@ def verify_node(state: SolveState) -> SolveState:
     trace = state.get("trace", []) + ["verify"]
     target = state.get("verify_target") or {"verify_type": "none"}
     result = _verify_with_sympy(target)
+
+    # 推送验证结果(思考过程):让用户看到"工具兜底"在工作
+    writer = get_stream_writer()
+    passed = result.get("passed")
+    if passed is True:
+        writer({"type": "thinking", "stage": "verify", "content": f"工具验证通过 ✓ {result.get('msg','')}"})
+    elif passed is False:
+        writer({"type": "thinking", "stage": "verify", "content": f"工具验证未通过 ✗ {result.get('msg','')}"})
+    else:
+        writer({"type": "thinking", "stage": "verify", "content": "本题无法用工具验证,转由复审判断"})
+
     return {"verify_result": result, "trace": trace}

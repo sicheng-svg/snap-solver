@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from ..state import SolveState
 from ..llm import get_llm
+from langgraph.config import get_stream_writer
 
 
 # ============================================================
@@ -83,6 +84,13 @@ def teach_output_node(state: SolveState) -> SolveState:
     写:final_output(教学讲解)、messages(追加本轮)。
     """
     trace = state.get("trace", []) + ["teach_output"]
+
+    writer = get_stream_writer()
+    if _is_degraded(state):
+        writer({"type": "thinking", "stage": "teach_output",
+                "content": "⚠️ 自动校验未完全通过,以下解答仅供参考,正在整理…"})
+    else:
+        writer({"type": "thinking", "stage": "teach_output", "content": "正在整理最终解答…"})
 
     question_text = state.get("question_text", "")
     solution = state.get("solution", "")

@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sympy
 
+from langgraph.config import get_stream_writer
+
 from ..state import SolveState
 
 
@@ -65,6 +67,7 @@ def _render_function_plot(spec: dict) -> str:
 def draw_node(state: SolveState) -> SolveState:
     """配图节点。读 diagram_spec -> 生成图/表 -> 写 diagram_svg。"""
     trace = state.get("trace", []) + ["draw"]
+    get_stream_writer()({"type": "thinking", "stage": "draw", "content": "正在生成配图/表…"})
     spec = state.get("diagram_spec") or {}
     dtype = spec.get("diagram_type", "none")
 

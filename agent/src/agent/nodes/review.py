@@ -18,6 +18,8 @@ nodes/review.py —— Reviewer 复审节点(两类题公共)。
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from langgraph.config import get_stream_writer
+
 from ..state import SolveState
 from ..llm import get_llm
 
@@ -65,6 +67,8 @@ def reviewer_node(state: SolveState) -> SolveState:
     """Reviewer 复审节点。读 question_text + solution + verify_result,
     产出 review_passed(+ reason)。"""
     trace = state.get("trace", []) + ["reviewer"]
+
+    get_stream_writer()({"type": "thinking", "stage": "reviewer", "content": "正在复审解答…"})
 
     question_text = state.get("question_text", "")
     solution = state.get("solution", "")

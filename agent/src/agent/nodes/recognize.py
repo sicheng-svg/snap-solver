@@ -18,6 +18,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from langgraph.config import get_stream_writer
+
 from ..state import SolveState
 from ..llm import get_llm
 
@@ -68,6 +70,10 @@ def recognize_node(state: SolveState) -> SolveState:
 
     llm = get_llm("vlm").with_structured_output(RecognizeResult)
     result: RecognizeResult = llm.invoke(messages)
+
+    writer = get_stream_writer()
+    writer({"type": "thinking", "stage": "recognize",
+            "content": f"已识别题目:{result.question_text}"})
 
     return {
         "question_text": result.question_text,
