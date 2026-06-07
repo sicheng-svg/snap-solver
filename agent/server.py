@@ -1,0 +1,105 @@
+"""
+server.py —— Python agent 的 gRPC server 入口。
+
+职责:把 LangGraph 的 graph 包成一个 gRPC 服务,供 Go 业务层调用。
+  实现 proto(solver.proto)里定义的 SolverAgent 服务的两个方法:
+    - Solve(server-streaming):跑 graph,把流式输出转成 SolveChunk 一段段 yield 给客户端。
+    - HealthCheck(unary):返回存活状态。
+
+【两段式流式】用 graph.astream(stream_mode=["custom","messages"]):
+  - custom 流:各节点用 get_stream_writer 推的 thinking dict -> SolveChunk(type=thinking)
+  - messages 流:LLM 的 token;只取 teach_output / direct_answer 节点的 ->
+                 SolveChunk(type=token)。其余节点(solver/reviewer 等)的 token 是中间
+                 思考,不作为最终回答输出。
+  - 结束 -> SolveChunk(type=done);异常 -> SolveChunk(type=error)。
+
+astream 多 stream_mode 时,每个产出是 (mode, data) 元组,据此区分两种流。
+用 grpc.aio(异步 server),与 astream 的异步天然契合。
+"""
+
+import asyncio
+import grpc
+from grpc import aio
+
+# 生成的 gRPC 代码(由 proto 编译而来)
+from gen import solver_pb2, solver_pb2_grpc
+
+# 你的 LangGraph 图
+from agent.graph import graph
+
+
+# 最终回答的 token 只取这两个节点(它们是面向用户的输出节点)
+_OUTPUT_NODES = {"teach_output", "direct_answer"}
+
+
+class SolverAgentServicer(solver_pb2_grpc.SolverAgentServicer):
+    """实现 proto 定义的 SolverAgent 服务。"""
+
+    async def Solve(self, request, context):
+        """流式解题。yield 出一个个 SolveChunk。
+
+        request: SolveRequest(image / user_text / session_id / user_id)
+        每个 yield 的 SolveChunk 会被 gRPC 流式发给客户端(Go)。
+        """
+        # 1. 组装 graph 的输入 state
+        input_state = {
+            "image": request.image if request.image else None,
+            "user_text": request.user_text or "",
+            "user_id": request.user_id or "",
+            "session_id": request.session_id or "",
+            "messages": [],
+            "trace": [],
+        }
+        # checkpointer 用 session_id 作 thread_id 维持多轮
+        config = {"configurable": {"thread_id": request.session_id or "default"}}
+
+        try:
+            # 2. 跑 graph,混合流(custom + messages)
+            async for mode, data in graph.astream(
+                input_state, config, stream_mode=["custom", "messages"]
+            ):
+                if mode == "custom":
+                    # 节点推的 thinking dict
+                    yield solver_pb2.SolveChunk(
+                        type=data.get("type", "thinking"),
+                        stage=data.get("stage", ""),
+                        content=data.get("content", ""),
+                    )
+                elif mode == "messages":
+                    # (message_chunk, metadata) —— 只取输出节点的 token
+                    message_chunk, metadata = data
+                    node = metadata.get("langgraph_node", "")
+                    token = getattr(message_chunk, "content", "")
+                    print(f"[DEBUG] token来自节点={node!r}: {token[:10]!r}")
+                    if node in _OUTPUT_NODES and token:
+                        yield solver_pb2.SolveChunk(
+                            type="token", stage=node, content=token
+                        )
+
+            # 3. 正常结束
+            yield solver_pb2.SolveChunk(type="done", stage="", content="")
+
+        except Exception as e:
+            # 异常也通过流告诉客户端(而不是直接断开)
+            yield solver_pb2.SolveChunk(type="error", stage="", content=str(e))
+
+    async def HealthCheck(self, request, context):
+        """健康检查。"""
+        return solver_pb2.HealthReply(status="ok")
+
+
+async def serve():
+    """启动异步 gRPC server。"""
+    server = aio.server()
+    solver_pb2_grpc.add_SolverAgentServicer_to_server(SolverAgentServicer(), server)
+
+    listen_addr = "[::]:50051"   # gRPC 默认端口习惯用 50051
+    server.add_insecure_port(listen_addr)   # 一期不加 TLS(内网服务间)
+
+    await server.start()
+    print(f"gRPC server 已启动,监听 {listen_addr}")
+    await server.wait_for_termination()
+
+
+if __name__ == "__main__":
+    asyncio.run(serve())

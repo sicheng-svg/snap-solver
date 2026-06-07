@@ -13,9 +13,12 @@ nodes/solve.py —— Solver 求解节点。
 【配图安全】solver 只产出"画什么",draw 用固定代码生成,不跑 LLM 代码。
 """
 
+from os import write
 from typing import Literal, Optional
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from pydantic import BaseModel, Field
+
+from langgraph.config import get_stream_writer
 
 from ..state import SolveState
 from ..llm import get_llm
@@ -125,6 +128,8 @@ def _build_history_context(llm_messages: list[BaseMessage]) -> str:
 def solver_node(state: SolveState) -> SolveState:
     """Solver 求解节点。写:solution、verify_target、配图相关字段。不写 final_output。"""
     trace = state.get("trace", []) + ["solver"]
+    writer = get_stream_writer()
+    writer({"type": "thinking", "stage": "solve", "content": "正在求解…"})
 
     question_text = state.get("question_text", "")
     question_type = state.get("question_type", "essay")
@@ -164,6 +169,8 @@ def solver_node(state: SolveState) -> SolveState:
         "plot_range": result.plot_range,
         "table_markdown": result.table_markdown,
     }
+
+    writer({"type": "thinking", "stage": "solve", "content": "求解完成,正在准备验证和配图信息…"})
 
     return {
         "solution": result.solution,
