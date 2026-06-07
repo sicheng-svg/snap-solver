@@ -1,0 +1,34 @@
+# ===== Python (agent/) =====
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+agent/.venv/
+agent/.env
+agent/.langgraph_api/
+agent/.langgraph/
+
+# ===== Go (server/) =====
+server/server
+server/main
+*.exe
+*.test
+*.out
+vendor/
+
+# ===== 前端 (web/) =====
+web/node_modules/
+web/dist/
+web/.vite/
+*.local
+
+# ===== 通用 =====
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# ===== 环境与密钥(重要:绝不提交 key)=====
+.env
+*.env
+!*.env.example
