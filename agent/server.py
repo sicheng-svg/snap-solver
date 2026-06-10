@@ -66,12 +66,16 @@ class SolverAgentServicer(solver_pb2_grpc.SolverAgentServicer):
                         content=data.get("content", ""),
                     )
                 elif mode == "messages":
-                    # (message_chunk, metadata) —— 只取输出节点的 token
+                    # (message_chunk, metadata) —— 只取输出节点的【流式增量】token
                     message_chunk, metadata = data
                     node = metadata.get("langgraph_node", "")
                     token = getattr(message_chunk, "content", "")
-                    print(f"[DEBUG] token来自节点={node!r}: {token[:10]!r}")
-                    if node in _OUTPUT_NODES and token:
+                    # AIMessageChunk = 流式增量(逐字);AIMessage = 节点结束时 append 进
+                    # messages 的完整消息。后者会和 token 重复,必须过滤掉。
+                    # 注意:AIMessageChunk 是 AIMessage 的子类,不能用 isinstance 判断,
+                    # 必须用 type().__name__ 精确匹配。
+                    is_chunk = type(message_chunk).__name__ == "AIMessageChunk"
+                    if node in _OUTPUT_NODES and token and is_chunk:
                         yield solver_pb2.SolveChunk(
                             type="token", stage=node, content=token
                         )
