@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "github.com/sicheng-svg/snap-solver/server/gen"
+	"github.com/sicheng-svg/snap-solver/server/internal/dao"
+	"github.com/sicheng-svg/snap-solver/server/internal/gateway"
 )
 
 const agentAddr = "localhost:50051"
@@ -36,11 +38,12 @@ type solveBody struct {
 }
 
 func main() {
+	dao.Init()
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Headers", "Content-Type")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
@@ -48,8 +51,12 @@ func main() {
 		c.Next()
 	})
 
-	r.GET("/api/solve", handleSolveGET)
-	r.POST("/api/solve", handleSolvePOST)
+	r.POST("/api/register", gateway.HandleRegister)
+	r.POST("/api/login", gateway.HandleLogin)
+
+	authed := r.Group("/api", gateway.AuthMiddleware())
+	authed.GET("/solve", handleSolveGET)
+	authed.POST("/solve", handleSolvePOST)
 
 	log.Println("网关启动,监听 :8080")
 	if err := r.Run(":8080"); err != nil {
