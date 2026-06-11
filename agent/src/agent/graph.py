@@ -22,6 +22,7 @@ graph.py —— 图的组装中心。
 """
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from agent.state import SolveState
 from agent.routing import (
@@ -98,7 +99,7 @@ def build_graph():
     g.add_edge("teach_output", END)
     g.add_edge("direct_answer", END)
 
-    return g.compile()
+    return g.compile(checkpointer=MemorySaver())
 
 
 graph = build_graph()

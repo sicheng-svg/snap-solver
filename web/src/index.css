@@ -1,111 +1,267 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
+/* ============ 全局(清掉 Vite 默认居中) ============ */
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #faf9f5;          /* 类 Claude 的暖白底 */
+  color: #1a1a1a;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* ============ 整体布局:顶栏 / 主体 / 底部输入 ============ */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+.topbar {
+  padding: 14px 24px;
+  font-weight: 600;
+  font-size: 16px;
+  border-bottom: 1px solid #eceae4;
+  background: #faf9f5;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+.body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;             /* 让 chat 内部自己滚动 */
 }
 
-code {
+/* ============ 对话区 ============ */
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 0 32px;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  margin-top: 120px;
   font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+}
+
+/* 每一轮对话,限宽居中(类 Claude 的内容栏) */
+.round {
+  max-width: 760px;
+  margin: 0 auto 36px;
+  padding: 0 24px;
+}
+
+/* 用户问题:靠右的浅色块 */
+.user-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+.user-bubble {
+  background: #e8e6dc;          /* 类 Claude 用户消息的浅色 */
+  padding: 10px 16px;
+  border-radius: 14px;
+  max-width: 80%;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* 思考过程:灰色细字,可折叠 */
+.thinking-box {
+  border: 1px solid #eceae4;
+  border-radius: 10px;
+  background: #f5f4ef;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #6b6b6b;
+}
+.thinking-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+.thinking-head:hover { background: #efeee8; border-radius: 10px; }
+.thinking-toggle { color: #999; font-size: 12px; }
+.thinking-list { padding: 0 14px 10px; }
+.thinking-item { margin-bottom: 5px; line-height: 1.5; }
+.thinking-stage {
+  display: inline-block;
+  background: #e3e1d7;
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-right: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+/* AI 回答:正文排版(markdown 渲染区) */
+.answer {
+  font-size: 15.5px;
+  line-height: 1.75;
+  text-align: left;
+}
+.answer h1, .answer h2, .answer h3 { margin: 20px 0 10px; }
+.answer h2 { font-size: 19px; border-bottom: 1px solid #eceae4; padding-bottom: 6px; }
+.answer p { margin: 10px 0; }
+.answer ul, .answer ol { padding-left: 24px; margin: 10px 0; }
+.answer li { margin: 4px 0; }
+.answer code {
+  background: #f0efe9;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.answer pre {
+  background: #f0efe9;
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.answer pre code { background: none; padding: 0; }
+.answer blockquote {
+  border-left: 3px solid #d8d6cc;
+  margin: 10px 0;
+  padding-left: 14px;
+  color: #666;
+}
+/* KaTeX 块级公式留点呼吸空间 */
+.answer .katex-display { margin: 14px 0; overflow-x: auto; }
+
+/* ============ 右侧导航栏 ============ */
+.sidenav {
+  width: 200px;
+  border-left: 1px solid #eceae4;
+  padding: 18px 10px;
+  overflow-y: auto;
+  background: #faf9f5;
+}
+.nav-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+.nav-node:hover { background: #efeee8; }
+.nav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b9b6a8;
+  flex-shrink: 0;
+}
+.nav-label {
+  font-size: 13px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;      /* 问题太长省略号 */
+}
+
+/* ============ 底部输入区(Claude 风格) ============ */
+.inputarea {
+  padding: 10px 24px 14px;
+  background: #faf9f5;
+}
+.inputbox {
+  max-width: 760px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #d8d6cc;
+  border-radius: 18px;
+  padding: 12px 14px 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.inputbox:focus-within { border-color: #b3afa0; }
+
+.inputbox textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 15px;
+  font-family: inherit;
+  line-height: 1.6;
+  background: transparent;
+  min-height: 24px;
+  max-height: 160px;
+}
+
+.inputbox-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.plus-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #d8d6cc;
+  background: #fff;
+  font-size: 20px;
+  line-height: 1;
+  color: #555;
+  cursor: pointer;
+}
+.plus-btn:hover { background: #f5f4ef; }
+.plus-btn:disabled { color: #ccc; cursor: default; }
+
+.send-btn {
+  padding: 8px 18px;
+  font-size: 14px;
+  border: none;
+  border-radius: 10px;
+  background: #c2410c;
+  color: #fff;
+  cursor: pointer;
+}
+.send-btn:disabled { background: #d8d6cc; cursor: default; }
+
+/* 已选图片缩略图 */
+.image-preview {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.image-preview img {
+  max-height: 80px;
+  border-radius: 8px;
+  border: 1px solid #eceae4;
+}
+.image-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: #555;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 用户消息里的图片 */
+.user-image {
+  display: block;
+  max-width: 240px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+/* AI 免责声明 */
+.disclaimer {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  margin-top: 8px;
 }
