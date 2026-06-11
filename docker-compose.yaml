@@ -1,0 +1,58 @@
+version: "3.8"
+
+# snap-solver 数据层编排
+# - mysql:    业务数据(users / sessions / messages),宿主机端口 3307
+# - postgres: LangGraph checkpointer(多轮状态持久化),宿主机端口 5433
+#
+# 用法:
+#   docker compose up -d          # 启动两个库
+#   docker compose ps             # 看状态(healthy 才算就绪)
+#   docker compose down           # 停(数据保留在 volume)
+#   docker compose down -v        # 停并清空数据(慎用)
+#
+# 连接:
+#   MySQL:    mysql -h 127.0.0.1 -P 3307 -u root -p   (密码 snap123456)
+#   Postgres: psql -h 127.0.0.1 -p 5433 -U postgres -d snap_checkpoint
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: snap-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: snap123456
+      MYSQL_DATABASE: snap_solver        # 启动时自动建好业务库
+      TZ: Asia/Shanghai
+    ports:
+      - "3308:3306"                      # 宿主 3308 -> 容器 3306,避开本地 MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/mysql-init:/docker-entrypoint-initdb.d   # 首次启动自动执行建表 SQL
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psnap123456"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: snap-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: snap123456
+      POSTGRES_DB: snap_checkpoint       # checkpointer 用的库
+      TZ: Asia/Shanghai
+    ports:
+      - "5434:5432"                      # 宿主 5434 -> 容器 5432
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mysql_data:
+  pg_data:
