@@ -40,7 +40,7 @@ from agent.nodes.output import direct_answer_node, teach_output_node
 from agent.nodes.context import assemble_context_node
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     g = StateGraph(SolveState)
 
     g.add_node("reset_turn", reset_turn_node)
@@ -99,7 +99,7 @@ def build_graph():
     g.add_edge("teach_output", END)
     g.add_edge("direct_answer", END)
 
-    return g.compile(checkpointer=MemorySaver())
+    return g.compile(checkpointer=checkpointer)
 
 
 graph = build_graph()

@@ -25,15 +25,24 @@ from grpc import aio
 from gen import solver_pb2, solver_pb2_grpc
 
 # 你的 LangGraph 图
-from agent.graph import graph
+import os
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from agent.graph import build_graph
 
 
 # 最终回答的 token 只取这两个节点(它们是面向用户的输出节点)
 _OUTPUT_NODES = {"teach_output", "direct_answer"}
 
+PG_URI = os.getenv(
+    "CHECKPOINT_PG_URI",
+    "postgresql://postgres:snap123456@127.0.0.1:5434/snap_checkpoint",
+)
+
 
 class SolverAgentServicer(solver_pb2_grpc.SolverAgentServicer):
     """实现 proto 定义的 SolverAgent 服务。"""
+    def __init__(self, graph):           # 改:graph 由外部传入
+        self.graph = graph
 
     async def Solve(self, request, context):
         """流式解题。yield 出一个个 SolveChunk。
@@ -55,7 +64,7 @@ class SolverAgentServicer(solver_pb2_grpc.SolverAgentServicer):
 
         try:
             # 2. 跑 graph,混合流(custom + messages)
-            async for mode, data in graph.astream(
+            async for mode, data in self.graph.astream(
                 input_state, config, stream_mode=["custom", "messages"]
             ):
                 if mode == "custom":
@@ -93,17 +102,19 @@ class SolverAgentServicer(solver_pb2_grpc.SolverAgentServicer):
 
 
 async def serve():
-    """启动异步 gRPC server。"""
-    server = aio.server()
-    solver_pb2_grpc.add_SolverAgentServicer_to_server(SolverAgentServicer(), server)
+    # async with 包住整个服务生命周期:连接池随服务启停
+    async with AsyncPostgresSaver.from_conn_string(PG_URI) as checkpointer:
+        await checkpointer.setup()        # 首次运行建 checkpoint 相关表(幂等,每次调也无妨)
+        graph = build_graph(checkpointer=checkpointer)
 
-    listen_addr = "[::]:50051"   # gRPC 默认端口习惯用 50051
-    server.add_insecure_port(listen_addr)   # 一期不加 TLS(内网服务间)
-
-    await server.start()
-    print(f"gRPC server 已启动,监听 {listen_addr}")
-    await server.wait_for_termination()
-
+        server = grpc.aio.server()
+        solver_pb2_grpc.add_SolverAgentServicer_to_server(
+            SolverAgentServicer(graph), server
+        )
+        server.add_insecure_port("[::]:50051")
+        await server.start()
+        print("gRPC server 已启动,监听 [::]:50051(checkpointer: PostgreSQL)")
+        await server.wait_for_termination()
 
 if __name__ == "__main__":
     asyncio.run(serve())
