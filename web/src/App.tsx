@@ -1,20 +1,18 @@
-import { useState, useRef, useEffect } from "react";
+// src/App.tsx —— 主界面:左侧会话列表 | 中间对话流 | 右侧消息导航。
+// 未登录显示 Login;登录后加载会话列表;切换会话加载历史;解题带真实 session_id。
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import Login from "./Login";
+import * as api from "./api";
 
-const GATEWAY = "http://localhost:8080";
-
-interface Thinking {
-  stage: string;
-  content: string;
-}
-
+interface Thinking { stage: string; content: string; }
 interface Message {
   id: number;
   question: string;
-  imagePreview?: string;   // 用户上传图片的预览(data-uri,显示在问题气泡里)
+  imagePreview?: string;
   thinkings: Thinking[];
   answer: string;
   done: boolean;
@@ -23,27 +21,100 @@ interface Message {
 
 function normalizeMath(text: string): string {
   return text
-    .replace(/\\\[/g, "$$$$")
-    .replace(/\\\]/g, "$$$$")
-    .replace(/\\\(/g, "$")
-    .replace(/\\\)/g, "$");
+    .replace(/\\\[/g, "$$$$").replace(/\\\]/g, "$$$$")
+    .replace(/\\\(/g, "$").replace(/\\\)/g, "$");
 }
 
-let nextId = 1;
+// 历史行(user/assistant 独立行)配对成 UI 轮次(一问一答一组)
+function rowsToMessages(rows: api.DbMessage[]): Message[] {
+  const out: Message[] = [];
+  for (const r of rows) {
+    if (r.role === "user") {
+      out.push({ id: r.id, question: r.content, thinkings: [], answer: "", done: true, expanded: false });
+    } else {
+      let th: Thinking[] = [];
+      if (r.thinking_json) {
+        try {
+          th = (JSON.parse(r.thinking_json) as { stage: string; content: string }[])
+            .map((t) => ({ stage: t.stage, content: t.content }));
+        } catch { /* 解析失败就不显示思考 */ }
+      }
+      const last = out[out.length - 1];
+      if (last && last.answer === "") { last.answer = r.content; last.thinkings = th; }
+      else out.push({ id: r.id, question: "", thinkings: th, answer: r.content, done: true, expanded: false });
+    }
+  }
+  return out;
+}
 
-function App() {
-  const [input, setInput] = useState("");
+let nextLocalId = 1_000_000; // 本地新消息的临时 id,避开历史 id
+
+export default function App() {
+  const [token, setTokenState] = useState<string | null>(api.getToken());
+  const [username, setUsername] = useState<string>(localStorage.getItem("username") ?? "用户");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [sessions, setSessions] = useState<api.Session[]>([]);
+  const [currentId, setCurrentId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
   const [solving, setSolving] = useState(false);
-  // 待发送的图片:dataUri 用于预览,base64 用于上传(纯 base64,不带前缀)
   const [pendingImage, setPendingImage] = useState<{ dataUri: string; base64: string } | null>(null);
 
-  const fileRef = useRef<HTMLInputElement | null>(null);   // 隐藏的文件选择框
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const logout = useCallback(() => {
+    api.clearToken();
+    localStorage.removeItem("username");
+    setTokenState(null);
+    setUserMenuOpen(false);
+    setSessions([]); setCurrentId(null); setMessages([]);
+  }, []);
+
+  // 统一错误处理:401 → 登出
+  const guard = useCallback(async <T,>(p: Promise<T>): Promise<T | null> => {
+    try { return await p; }
+    catch (e) {
+      if (e instanceof api.AuthError) { logout(); return null; }
+      throw e;
+    }
+  }, [logout]);
+
+  // 登录后加载会话列表
+  useEffect(() => {
+    if (!token) return;
+    guard(api.listSessions()).then((list) => { if (list) setSessions(list); });
+  }, [token, guard]);
+
+  // 切换会话:加载历史
+  const switchSession = async (id: number) => {
+    if (solving) return;
+    setCurrentId(id);
+    const rows = await guard(api.listMessages(id));
+    if (rows) setMessages(rowsToMessages(rows));
+  };
+
+  const newSession = async () => {
+    if (solving) return;
+    const s = await guard(api.createSession());
+    if (!s) return;
+    setSessions((prev) => [s, ...prev]);
+    setCurrentId(s.id);
+    setMessages([]);
+  };
+
+  const removeSession = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation(); // 别触发切换
+    if (solving) return;
+    const ok = await guard(api.deleteSession(id).then(() => true));
+    if (!ok) return;
+    setSessions((prev) => prev.filter((s) => s.id !== id));
+    if (currentId === id) { setCurrentId(null); setMessages([]); }
+  };
 
   const updateLast = (updater: (m: Message) => Message) => {
     setMessages((prev) => {
@@ -54,126 +125,128 @@ function App() {
     });
   };
 
-  // 选择图片:读成 dataUri(预览)+ 纯 base64(上传)
   const handlePickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUri = reader.result as string;            // data:image/png;base64,xxxx
-      const base64 = dataUri.split(",")[1] ?? "";          // 去掉前缀,纯 base64
-      setPendingImage({ dataUri, base64 });
+      const dataUri = reader.result as string;
+      setPendingImage({ dataUri, base64: dataUri.split(",")[1] ?? "" });
     };
     reader.readAsDataURL(file);
-    e.target.value = "";   // 允许再次选同一文件
+    e.target.value = "";
   };
 
-  // 发送:POST + fetch 读流(支持带图;EventSource 只能 GET 所以换 fetch)
   const handleSend = async () => {
     const text = input.trim();
     if ((!text && !pendingImage) || solving) return;
 
-    const msg: Message = {
-      id: nextId++,
+    // 没选会话就先自动建一个
+    let sid = currentId;
+    if (sid === null) {
+      const s = await guard(api.createSession());
+      if (!s) return;
+      setSessions((prev) => [s, ...prev]);
+      setCurrentId(s.id);
+      sid = s.id;
+    }
+
+    setMessages((prev) => [...prev, {
+      id: nextLocalId++,
       question: text || "(图片题目)",
       imagePreview: pendingImage?.dataUri,
-      thinkings: [],
-      answer: "",
-      done: false,
-      expanded: true,
-    };
-    setMessages((prev) => [...prev, msg]);
+      thinkings: [], answer: "", done: false, expanded: true,
+    }]);
     const imageBase64 = pendingImage?.base64 ?? "";
-    setInput("");
-    setPendingImage(null);
-    setSolving(true);
+    setInput(""); setPendingImage(null); setSolving(true);
 
     try {
-      const resp = await fetch(`${GATEWAY}/api/solve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, image: imageBase64 }),
-      });
-      if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
-
-      // 手动读流并按 SSE 格式解析(data: {...}\n\n)
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE 事件以空行分隔;可能一次到达多个事件,也可能半个,用 buffer 累积
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";   // 最后一段可能不完整,留到下次
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data: ")) continue;
-          const chunk = JSON.parse(line.slice(6)) as {
-            type: string; stage: string; content: string;
-          };
-          handleChunk(chunk);
+      await api.solveStream(text, imageBase64, sid, (chunk) => {
+        if (chunk.type === "thinking") {
+          updateLast((m) => ({ ...m, thinkings: [...m.thinkings, { stage: chunk.stage, content: chunk.content }] }));
+        } else if (chunk.type === "token") {
+          updateLast((m) => ({ ...m, answer: m.answer + chunk.content }));
+        } else if (chunk.type === "done") {
+          updateLast((m) => ({ ...m, done: true, expanded: false }));
+        } else if (chunk.type === "error") {
+          updateLast((m) => ({ ...m, answer: m.answer + `\n\n[错误] ${chunk.content}`, done: true }));
         }
-      }
-    } catch (err) {
-      updateLast((m) => ({ ...m, answer: m.answer + `\n\n[错误] ${String(err)}`, done: true }));
+      });
+      // 首问可能改了标题:刷新会话列表
+      const list = await guard(api.listSessions());
+      if (list) setSessions(list);
+    } catch (e) {
+      if (e instanceof api.AuthError) { logout(); return; }
+      updateLast((m) => ({ ...m, answer: m.answer + `\n\n[错误] ${String(e)}`, done: true }));
     } finally {
       setSolving(false);
     }
   };
 
-  const handleChunk = (chunk: { type: string; stage: string; content: string }) => {
-    if (chunk.type === "thinking") {
-      updateLast((m) => ({
-        ...m,
-        thinkings: [...m.thinkings, { stage: chunk.stage, content: chunk.content }],
-      }));
-    } else if (chunk.type === "token") {
-      updateLast((m) => ({ ...m, answer: m.answer + chunk.content }));
-    } else if (chunk.type === "done") {
-      updateLast((m) => ({ ...m, done: true, expanded: false }));
-    } else if (chunk.type === "error") {
-      updateLast((m) => ({ ...m, answer: m.answer + `\n\n[错误] ${chunk.content}`, done: true }));
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   const toggleExpand = (id: number) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, expanded: !m.expanded } : m))
-    );
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, expanded: !m.expanded } : m)));
   };
-
   const jumpTo = (id: number) => {
     document.getElementById(`msg-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // 未登录 → 登录页
+  if (!token) {
+    return <Login onLogin={(t, name) => {
+      api.setToken(t);
+      localStorage.setItem("username", name);
+      setUsername(name);
+      setTokenState(t);
+    }} />;
+  }
+
   return (
     <div className="app">
-      <header className="topbar">snap-solver · 拍照搜题</header>
+      <header className="topbar">
+        <span>snap-solver · 拍照搜题</span>
+      </header>
 
       <div className="body">
-        <main className="chat">
-          {messages.length === 0 && <div className="empty">输入一道题,或上传题目照片,开始解题</div>}
+        {/* 左侧:会话列表(通到底) */}
+        <aside className="sidebar">
+          <button className="new-session" onClick={newSession}>+ 新建会话</button>
+          <div className="session-list">
+            {sessions.map((s) => (
+              <div key={s.id}
+                   className={`session-item ${s.id === currentId ? "active" : ""}`}
+                   onClick={() => switchSession(s.id)} title={s.title}>
+                <span className="session-title">{s.title}</span>
+                <span className="session-del" onClick={(e) => removeSession(s.id, e)}>×</span>
+              </div>
+            ))}
+          </div>
+          <div className="user-area" onClick={() => setUserMenuOpen((v) => !v)}>
+            {userMenuOpen && (
+              <div className="user-menu" onClick={(e) => { e.stopPropagation(); logout(); }}>
+                退出登录
+              </div>
+            )}
+            <span className="avatar">{username.slice(0, 1).toUpperCase()}</span>
+            <span className="user-name">{username}</span>
+          </div>
+        </aside>
 
+        {/* 中间列:对话区 + 输入框 */}
+        <div className="chat-col">
+        <main className="chat">
+          {messages.length === 0 && (
+            <div className="empty">{currentId === null ? "新建或选择一个会话,开始解题" : "这个会话还没有消息"}</div>
+          )}
           {messages.map((m) => (
             <div key={m.id} id={`msg-${m.id}`} className="round">
-              <div className="user-row">
-                <div className="user-bubble">
-                  {m.imagePreview && <img src={m.imagePreview} className="user-image" alt="题目图片" />}
-                  {m.question}
+              {m.question && (
+                <div className="user-row">
+                  <div className="user-bubble">
+                    {m.imagePreview && <img src={m.imagePreview} className="user-image" alt="题目图片" />}
+                    {m.question}
+                  </div>
                 </div>
-              </div>
-
+              )}
               {m.thinkings.length > 0 && (
                 <div className="thinking-box">
                   <div className="thinking-head" onClick={() => toggleExpand(m.id)}>
@@ -191,7 +264,6 @@ function App() {
                   )}
                 </div>
               )}
-
               {m.answer && (
                 <div className="answer">
                   <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
@@ -201,13 +273,41 @@ function App() {
               )}
             </div>
           ))}
-
           <div ref={bottomRef} />
         </main>
+        {/* 底部输入 */}
+        <footer className="inputarea">
+          <div className="inputbox">
+            {pendingImage && (
+              <div className="image-preview">
+                <img src={pendingImage.dataUri} alt="待发送图片" />
+                <button className="image-remove" onClick={() => setPendingImage(null)}>×</button>
+              </div>
+            )}
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="输入题目,或点击 + 上传题目照片…"
+              disabled={solving}
+              rows={1}
+            />
+            <div className="inputbox-bottom">
+              <button className="plus-btn" onClick={() => fileRef.current?.click()} disabled={solving} title="添加图片">+</button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePickImage} />
+              <button className="send-btn" onClick={handleSend} disabled={solving || (!input.trim() && !pendingImage)}>
+                {solving ? "解题中…" : "发送"}
+              </button>
+            </div>
+          </div>
+          <div className="disclaimer">snap-solver 由 AI 驱动,可能会出错,请核对关键步骤。</div>
+        </footer>
+        </div>
 
+        {/* 右侧:消息导航 */}
         {messages.length > 0 && (
           <nav className="sidenav">
-            {messages.map((m) => (
+            {messages.filter((m) => m.question).map((m) => (
               <div key={m.id} className="nav-node" title={m.question} onClick={() => jumpTo(m.id)}>
                 <span className="nav-dot" />
                 <span className="nav-label">{m.question}</span>
@@ -217,43 +317,6 @@ function App() {
         )}
       </div>
 
-      {/* 底部:Claude 风格输入框 */}
-      <footer className="inputarea">
-        <div className="inputbox">
-          {/* 已选图片缩略图(可移除) */}
-          {pendingImage && (
-            <div className="image-preview">
-              <img src={pendingImage.dataUri} alt="待发送图片" />
-              <button className="image-remove" onClick={() => setPendingImage(null)}>×</button>
-            </div>
-          )}
-
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入题目,或点击 + 上传题目照片…"
-            disabled={solving}
-            rows={1}
-          />
-
-          <div className="inputbox-bottom">
-            {/* 左下:+ 添加图片 */}
-            <button className="plus-btn" onClick={() => fileRef.current?.click()} disabled={solving} title="添加图片">
-              +
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePickImage} />
-
-            {/* 右下:发送 */}
-            <button className="send-btn" onClick={handleSend} disabled={solving || (!input.trim() && !pendingImage)}>
-              {solving ? "解题中…" : "发送"}
-            </button>
-          </div>
-        </div>
-        <div className="disclaimer">snap-solver 由 AI 驱动,可能会出错,请核对关键步骤。</div>
-      </footer>
     </div>
   );
 }
-
-export default App;

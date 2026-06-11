@@ -16,12 +16,22 @@ body {
 }
 
 .topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 14px 24px;
   font-weight: 600;
   font-size: 16px;
   border-bottom: 1px solid #eceae4;
   background: #faf9f5;
 }
+.logout {
+  font-size: 13px;
+  font-weight: 400;
+  color: #999;
+  cursor: pointer;
+}
+.logout:hover { color: #c2410c; }
 
 .body {
   flex: 1;
@@ -30,6 +40,12 @@ body {
 }
 
 /* ============ 对话区 ============ */
+.chat-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .chat {
   flex: 1;
   overflow-y: auto;
@@ -265,3 +281,158 @@ body {
   color: #999;
   margin-top: 8px;
 }
+
+
+/* ============ 左侧会话列表 ============ */
+.sidebar {
+  width: 240px;
+  border-right: 1px solid #eceae4;
+  padding: 14px 10px 10px;
+  background: #f5f4ef;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.new-session {
+  width: 100%;
+  padding: 9px 0;
+  margin-bottom: 12px;
+  font-size: 14px;
+  border: 1px dashed #c9c6b8;
+  border-radius: 10px;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+}
+.new-session:hover { background: #efeee8; }
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  font-size: 14px;
+  color: #444;
+}
+.session-item:hover { background: #efeee8; }
+.session-item.active { background: #e8e6dc; font-weight: 500; }
+.session-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-del {
+  color: #bbb;
+  margin-left: 8px;
+  padding: 0 4px;
+  border-radius: 4px;
+  visibility: hidden;
+}
+.session-item:hover .session-del { visibility: visible; }
+.session-del:hover { color: #c2410c; }
+
+/* ============ 登录页 ============ */
+.login-wrap {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #faf9f5;
+}
+.login-card {
+  width: 340px;
+  background: #fff;
+  border: 1px solid #eceae4;
+  border-radius: 16px;
+  padding: 32px 28px;
+  text-align: center;
+}
+.login-card h1 { margin: 0 0 4px; font-size: 24px; }
+.login-sub { color: #999; font-size: 14px; margin: 0 0 22px; }
+.login-card input {
+  width: 100%;
+  padding: 11px 14px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  border: 1px solid #d8d6cc;
+  border-radius: 10px;
+  outline: none;
+  box-sizing: border-box;
+}
+.login-card input:focus { border-color: #b3afa0; }
+.login-error { color: #c2410c; font-size: 13px; margin-bottom: 10px; }
+.login-btn {
+  width: 100%;
+  padding: 11px 0;
+  font-size: 15px;
+  border: none;
+  border-radius: 10px;
+  background: #c2410c;
+  color: #fff;
+  cursor: pointer;
+}
+.login-btn:disabled { background: #d8d6cc; }
+.login-switch {
+  margin-top: 14px;
+  font-size: 13px;
+  color: #999;
+  cursor: pointer;
+}
+.login-switch:hover { color: #c2410c; }
+
+
+/* ============ 侧边栏底部用户区 ============ */
+.user-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  margin-top: 8px;
+  border-top: 1px solid #e5e3d8;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.user-area:hover { background: #efeee8; }
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #c2410c;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.user-name {
+  font-size: 14px;
+  color: #444;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 8px;
+  right: 8px;
+  background: #fff;
+  border: 1px solid #e5e3d8;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #c2410c;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  text-align: center;
+}
+.user-menu:hover { background: #faf4f0; }
