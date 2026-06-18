@@ -1,0 +1,86 @@
+# docker-compose.prod.yml —— 生产部署(放项目根)
+# 全家桶:两个库 + agent + server + nginx。只有 nginx 80 对外。
+# 容器间用服务名互访(agent / mysql / postgres / server)。
+#
+# 部署:
+#   在 VPS 上:配好 agent/.env(API keys)→ docker compose -f docker-compose.prod.yml up -d --build
+#   访问:http://你的VPS_IP
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-snap123456}
+      MYSQL_DATABASE: snap_solver
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/mysql-init:/docker-entrypoint-initdb.d
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-snap123456}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-snap123456}
+      POSTGRES_DB: snap_checkpoint
+      TZ: Asia/Shanghai
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./agent/.env                       # DeepSeek / 硅基 API keys
+    environment:
+      # 容器内连 postgres 服务(内网 5432,不是宿主的 5433)
+      CHECKPOINT_PG_URI: postgresql://postgres:${POSTGRES_PASSWORD:-snap123456}@postgres:5432/snap_checkpoint
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 不映射端口:仅内网,server 通过 agent:50051 访问
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # 容器内服务名互访(内网端口,不是宿主映射的 3308/5433)
+      AGENT_ADDR: agent:50051
+      MYSQL_DSN: root:${MYSQL_ROOT_PASSWORD:-snap123456}@tcp(mysql:3306)/snap_solver?charset=utf8mb4&parseTime=True&loc=Local
+      JWT_SECRET: ${JWT_SECRET:-please-change-in-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      agent:
+        condition: service_started
+    # 不映射端口:仅内网,nginx 反代到 server:8080
+
+  nginx:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"                            # 唯一对外端口
+    depends_on:
+      - server
+
+volumes:
+  mysql_data:
+  pg_data:

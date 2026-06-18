@@ -1,7 +1,7 @@
 // src/api.ts —— 后端请求封装:token 管理 + 统一鉴权 + 各 API。
 // 所有组件都通过这里和后端打交道,不直接写 fetch(类比后端的 client 层)。
 
-export const GATEWAY = "http://localhost:8080";
+export const GATEWAY = "";
 
 // ---- token 管理(localStorage)----
 export function getToken(): string | null {
